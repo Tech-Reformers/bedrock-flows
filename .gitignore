@@ -1,0 +1,20 @@
+# Python virtual environment
+venv/
+.venv/
+
+# Python bytecode
+__pycache__/
+*.py[cod]
+
+# Jupyter
+.ipynb_checkpoints/
+
+# macOS
+.DS_Store
+
+# Local tool settings (machine-specific, may contain secrets)
+.kiro/
+.vscode/
+
+# Exported flow definitions written by the flow manager
+*_exported.json

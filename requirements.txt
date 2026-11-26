@@ -1,0 +1,7 @@
+boto3>=1.36.1
+jupyter
+ipykernel
+
+# Used by the interactive flow manager (tools/flow_manager)
+rich
+termcolor

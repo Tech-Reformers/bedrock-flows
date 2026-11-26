@@ -1,0 +1,266 @@
+{
+    "AWSTemplateFormatVersion": "2010-09-09",
+    "Description": "Amazon Bedrock Flow (input -> iterator -> prompt -> collector -> output) deployed with CloudFormation",
+    "Parameters": {
+        "RoleName": {
+            "Type": "String",
+            "Default": "BedrockFlowsSampleRole",
+            "Description": "Existing IAM role the flow assumes. Create it by running 01_flow_lifecycle/flow_lifecycle.py --keep or any module script."
+        },
+        "FlowName": {
+            "Type": "String",
+            "Default": "SimpleFlow_CFN",
+            "Description": "Name of the flow"
+        },
+        "ModelId": {
+            "Type": "String",
+            "Description": "Model or inference profile ARN for the prompt node, for example arn:aws:bedrock:us-west-2:111122223333:inference-profile/us.amazon.nova-2-lite-v1:0"
+        }
+    },
+    "Resources": {
+        "BedrockFlow": {
+            "Type": "AWS::Bedrock::Flow",
+            "Properties": {
+                "Name": {
+                    "Ref": "FlowName"
+                },
+                "ExecutionRoleArn": {
+                    "Fn::Sub": "arn:aws:iam::${AWS::AccountId}:role/${RoleName}"
+                },
+                "Description": "A simple flow deployed using CloudFormation.",
+                "Definition": {
+                    "Nodes": [
+                        {
+                            "Type": "Input",
+                            "Name": "FlowInputNode",
+                            "Outputs": [
+                                {
+                                    "Name": "document",
+                                    "Type": "Array"
+                                }
+                            ]
+                        },
+                        {
+                            "Type": "Iterator",
+                            "Name": "PromptIterator",
+                            "Inputs": [
+                                {
+                                    "Name": "array",
+                                    "Type": "Array",
+                                    "Expression": "$.data"
+                                }
+                            ],
+                            "Outputs": [
+                                {
+                                    "Name": "arrayItem",
+                                    "Type": "String"
+                                },
+                                {
+                                    "Name": "arraySize",
+                                    "Type": "Number"
+                                }
+                            ]
+                        },
+                        {
+                            "Type": "Prompt",
+                            "Name": "PromptProcessor",
+                            "Configuration": {
+                                "Prompt": {
+                                    "SourceConfiguration": {
+                                        "Inline": {
+                                            "ModelId": {
+                                                "Ref": "ModelId"
+                                            },
+                                            "TemplateType": "TEXT",
+                                            "InferenceConfiguration": {
+                                                "Text": {
+                                                    "Temperature": 0.7
+                                                }
+                                            },
+                                            "TemplateConfiguration": {
+                                                "Text": {
+                                                    "Text": "{{userPrompt}}"
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            },
+                            "Inputs": [
+                                {
+                                    "Name": "userPrompt",
+                                    "Type": "String",
+                                    "Expression": "$.data"
+                                }
+                            ],
+                            "Outputs": [
+                                {
+                                    "Name": "modelCompletion",
+                                    "Type": "String"
+                                }
+                            ]
+                        },
+                        {
+                            "Type": "Collector",
+                            "Name": "ResponseCollector",
+                            "Inputs": [
+                                {
+                                    "Name": "arrayItem",
+                                    "Type": "String",
+                                    "Expression": "$.data"
+                                },
+                                {
+                                    "Name": "arraySize",
+                                    "Type": "Number",
+                                    "Expression": "$.data"
+                                }
+                            ],
+                            "Outputs": [
+                                {
+                                    "Name": "collectedArray",
+                                    "Type": "Array"
+                                }
+                            ]
+                        },
+                        {
+                            "Type": "Output",
+                            "Name": "FlowOutput",
+                            "Inputs": [
+                                {
+                                    "Name": "document",
+                                    "Type": "Array",
+                                    "Expression": "$.data"
+                                }
+                            ]
+                        }
+                    ],
+                    "Connections": [
+                        {
+                            "Name": "Input_to_Iterator",
+                            "Source": "FlowInputNode",
+                            "Target": "PromptIterator",
+                            "Type": "Data",
+                            "Configuration": {
+                                "Data": {
+                                    "SourceOutput": "document",
+                                    "TargetInput": "array"
+                                }
+                            }
+                        },
+                        {
+                            "Name": "Iterator_to_Prompt",
+                            "Source": "PromptIterator",
+                            "Target": "PromptProcessor",
+                            "Type": "Data",
+                            "Configuration": {
+                                "Data": {
+                                    "SourceOutput": "arrayItem",
+                                    "TargetInput": "userPrompt"
+                                }
+                            }
+                        },
+                        {
+                            "Name": "Prompt_to_Collector",
+                            "Source": "PromptProcessor",
+                            "Target": "ResponseCollector",
+                            "Type": "Data",
+                            "Configuration": {
+                                "Data": {
+                                    "SourceOutput": "modelCompletion",
+                                    "TargetInput": "arrayItem"
+                                }
+                            }
+                        },
+                        {
+                            "Name": "Iterator_to_Collector_Size",
+                            "Source": "PromptIterator",
+                            "Target": "ResponseCollector",
+                            "Type": "Data",
+                            "Configuration": {
+                                "Data": {
+                                    "SourceOutput": "arraySize",
+                                    "TargetInput": "arraySize"
+                                }
+                            }
+                        },
+                        {
+                            "Name": "Collector_to_Output",
+                            "Source": "ResponseCollector",
+                            "Target": "FlowOutput",
+                            "Type": "Data",
+                            "Configuration": {
+                                "Data": {
+                                    "SourceOutput": "collectedArray",
+                                    "TargetInput": "document"
+                                }
+                            }
+                        }
+                    ]
+                }
+            }
+        },
+        "BedrockFlowVersion": {
+            "Type": "AWS::Bedrock::FlowVersion",
+            "Properties": {
+                "FlowArn": {
+                    "Fn::GetAtt": [
+                        "BedrockFlow",
+                        "Arn"
+                    ]
+                },
+                "Description": "Snapshot of the prepared flow"
+            }
+        },
+        "BedrockFlowAlias": {
+            "Type": "AWS::Bedrock::FlowAlias",
+            "Properties": {
+                "Name": "live",
+                "FlowArn": {
+                    "Fn::GetAtt": [
+                        "BedrockFlow",
+                        "Arn"
+                    ]
+                },
+                "RoutingConfiguration": [
+                    {
+                        "FlowVersion": {
+                            "Fn::GetAtt": [
+                                "BedrockFlowVersion",
+                                "Version"
+                            ]
+                        }
+                    }
+                ]
+            }
+        }
+    },
+    "Outputs": {
+        "BedrockFlowArn": {
+            "Description": "The ARN of the Bedrock Flow",
+            "Value": {
+                "Fn::GetAtt": [
+                    "BedrockFlow",
+                    "Arn"
+                ]
+            }
+        },
+        "BedrockFlowId": {
+            "Description": "The ID of the Bedrock Flow",
+            "Value": {
+                "Fn::GetAtt": [
+                    "BedrockFlow",
+                    "Id"
+                ]
+            }
+        },
+        "BedrockFlowAliasId": {
+            "Description": "The alias ID to pass to InvokeFlow",
+            "Value": {
+                "Fn::GetAtt": [
+                    "BedrockFlowAlias",
+                    "Id"
+                ]
+            }
+        }
+    }
+}

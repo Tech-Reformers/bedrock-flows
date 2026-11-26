@@ -1,0 +1,356 @@
+{
+    "name": "sample-condition-flow",
+    "description": "Condition node sample: AWS questions go to an AWS expert grounded in AWS documentation from the AWS Knowledge MCP Server, everything else goes to a general prompt.",
+    "tags": {
+        "Environment": "dev",
+        "Project": "sample-bedrock-condition-flow"
+    },
+    "definition": {
+        "nodes": [
+            {
+                "name": "FlowInputNode",
+                "type": "Input",
+                "configuration": {
+                    "input": {}
+                },
+                "outputs": [
+                    {
+                        "name": "document",
+                        "type": "String"
+                    }
+                ]
+            },
+            {
+                "name": "Classify_question",
+                "type": "Prompt",
+                "configuration": {
+                    "prompt": {
+                        "sourceConfiguration": {
+                            "inline": {
+                                "modelId": "$$PROMPT_CLASSIFY_INPUT_MODEL_ID",
+                                "templateType": "TEXT",
+                                "inferenceConfiguration": {
+                                    "text": {
+                                        "maxTokens": 2,
+                                        "temperature": 0
+                                    }
+                                },
+                                "templateConfiguration": {
+                                    "text": {
+                                        "inputVariables": [
+                                            {
+                                                "name": "input"
+                                            }
+                                        ],
+                                        "text": "Classify the user's question.\nAWS: the question is about Amazon Web Services, such as AWS services, APIs, SDKs, the AWS console, pricing, or building on AWS.\nOTHER: anything else.\n\nReply with exactly one word, AWS or OTHER. Do not explain.\n\nQuestion: {{input}}"
+                                    }
+                                }
+                            }
+                        }
+                    }
+                },
+                "inputs": [
+                    {
+                        "name": "input",
+                        "type": "String",
+                        "expression": "$.data"
+                    }
+                ],
+                "outputs": [
+                    {
+                        "name": "modelCompletion",
+                        "type": "String"
+                    }
+                ]
+            },
+            {
+                "name": "Route_by_topic",
+                "type": "Condition",
+                "configuration": {
+                    "condition": {
+                        "conditions": [
+                            {
+                                "name": "IsAWS",
+                                "expression": "conditionInput == \"AWS\""
+                            },
+                            {
+                                "name": "default"
+                            }
+                        ]
+                    }
+                },
+                "inputs": [
+                    {
+                        "name": "conditionInput",
+                        "type": "String",
+                        "expression": "$.data"
+                    }
+                ]
+            },
+            {
+                "name": "Search_AWS_docs",
+                "type": "LambdaFunction",
+                "configuration": {
+                    "lambdaFunction": {
+                        "lambdaArn": "$$DOCS_LAMBDA_ARN"
+                    }
+                },
+                "inputs": [
+                    {
+                        "name": "question",
+                        "type": "String",
+                        "expression": "$.data"
+                    }
+                ],
+                "outputs": [
+                    {
+                        "name": "functionResponse",
+                        "type": "String"
+                    }
+                ]
+            },
+            {
+                "name": "Answer_as_AWS_expert",
+                "type": "Prompt",
+                "configuration": {
+                    "prompt": {
+                        "sourceConfiguration": {
+                            "inline": {
+                                "modelId": "$$PROMPT_MODEL_ID",
+                                "templateType": "TEXT",
+                                "inferenceConfiguration": {
+                                    "text": {
+                                        "maxTokens": 1000,
+                                        "temperature": 0.2
+                                    }
+                                },
+                                "templateConfiguration": {
+                                    "text": {
+                                        "inputVariables": [
+                                            {
+                                                "name": "question"
+                                            },
+                                            {
+                                                "name": "docs"
+                                            }
+                                        ],
+                                        "text": "You are an AWS expert. Answer the question using only the AWS documentation excerpts below. Keep the answer short and practical, and list the source URLs you used at the end. If the excerpts don't answer the question, say so.\n\nQuestion: {{question}}\n\nAWS documentation excerpts:\n{{docs}}"
+                                    }
+                                }
+                            }
+                        }
+                    }
+                },
+                "inputs": [
+                    {
+                        "name": "question",
+                        "type": "String",
+                        "expression": "$.data"
+                    },
+                    {
+                        "name": "docs",
+                        "type": "String",
+                        "expression": "$.data"
+                    }
+                ],
+                "outputs": [
+                    {
+                        "name": "modelCompletion",
+                        "type": "String"
+                    }
+                ]
+            },
+            {
+                "name": "Answer_general",
+                "type": "Prompt",
+                "configuration": {
+                    "prompt": {
+                        "sourceConfiguration": {
+                            "inline": {
+                                "modelId": "$$PROMPT_MODEL_ID",
+                                "templateType": "TEXT",
+                                "inferenceConfiguration": {
+                                    "text": {
+                                        "maxTokens": 1000,
+                                        "temperature": 0.8
+                                    }
+                                },
+                                "templateConfiguration": {
+                                    "text": {
+                                        "inputVariables": [
+                                            {
+                                                "name": "input"
+                                            }
+                                        ],
+                                        "text": "Give a succinct answer in a professional tone for query {{input}}"
+                                    }
+                                }
+                            }
+                        }
+                    }
+                },
+                "inputs": [
+                    {
+                        "name": "input",
+                        "type": "String",
+                        "expression": "$.data"
+                    }
+                ],
+                "outputs": [
+                    {
+                        "name": "modelCompletion",
+                        "type": "String"
+                    }
+                ]
+            },
+            {
+                "name": "FlowOutput_AWS",
+                "type": "Output",
+                "configuration": {
+                    "output": {}
+                },
+                "inputs": [
+                    {
+                        "name": "document",
+                        "type": "String",
+                        "expression": "$.data"
+                    }
+                ]
+            },
+            {
+                "name": "FlowOutput_General",
+                "type": "Output",
+                "configuration": {
+                    "output": {}
+                },
+                "inputs": [
+                    {
+                        "name": "document",
+                        "type": "String",
+                        "expression": "$.data"
+                    }
+                ]
+            }
+        ],
+        "connections": [
+            {
+                "name": "InputToClassify",
+                "source": "FlowInputNode",
+                "target": "Classify_question",
+                "type": "Data",
+                "configuration": {
+                    "data": {
+                        "sourceOutput": "document",
+                        "targetInput": "input"
+                    }
+                }
+            },
+            {
+                "name": "ClassifyToRoute",
+                "source": "Classify_question",
+                "target": "Route_by_topic",
+                "type": "Data",
+                "configuration": {
+                    "data": {
+                        "sourceOutput": "modelCompletion",
+                        "targetInput": "conditionInput"
+                    }
+                }
+            },
+            {
+                "name": "RouteAWSToSearch",
+                "source": "Route_by_topic",
+                "target": "Search_AWS_docs",
+                "type": "Conditional",
+                "configuration": {
+                    "conditional": {
+                        "condition": "IsAWS"
+                    }
+                }
+            },
+            {
+                "name": "RouteDefaultToGeneral",
+                "source": "Route_by_topic",
+                "target": "Answer_general",
+                "type": "Conditional",
+                "configuration": {
+                    "conditional": {
+                        "condition": "default"
+                    }
+                }
+            },
+            {
+                "name": "InputToSearch",
+                "source": "FlowInputNode",
+                "target": "Search_AWS_docs",
+                "type": "Data",
+                "configuration": {
+                    "data": {
+                        "sourceOutput": "document",
+                        "targetInput": "question"
+                    }
+                }
+            },
+            {
+                "name": "SearchToExpert",
+                "source": "Search_AWS_docs",
+                "target": "Answer_as_AWS_expert",
+                "type": "Data",
+                "configuration": {
+                    "data": {
+                        "sourceOutput": "functionResponse",
+                        "targetInput": "docs"
+                    }
+                }
+            },
+            {
+                "name": "InputToExpert",
+                "source": "FlowInputNode",
+                "target": "Answer_as_AWS_expert",
+                "type": "Data",
+                "configuration": {
+                    "data": {
+                        "sourceOutput": "document",
+                        "targetInput": "question"
+                    }
+                }
+            },
+            {
+                "name": "InputToGeneral",
+                "source": "FlowInputNode",
+                "target": "Answer_general",
+                "type": "Data",
+                "configuration": {
+                    "data": {
+                        "sourceOutput": "document",
+                        "targetInput": "input"
+                    }
+                }
+            },
+            {
+                "name": "ExpertToOutput",
+                "source": "Answer_as_AWS_expert",
+                "target": "FlowOutput_AWS",
+                "type": "Data",
+                "configuration": {
+                    "data": {
+                        "sourceOutput": "modelCompletion",
+                        "targetInput": "document"
+                    }
+                }
+            },
+            {
+                "name": "GeneralToOutput",
+                "source": "Answer_general",
+                "target": "FlowOutput_General",
+                "type": "Data",
+                "configuration": {
+                    "data": {
+                        "sourceOutput": "modelCompletion",
+                        "targetInput": "document"
+                    }
+                }
+            }
+        ]
+    }
+}
