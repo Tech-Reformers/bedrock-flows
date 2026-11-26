@@ -50,7 +50,14 @@ between custom code steps (consider AWS Step Functions), or for very latency-sen
 
 ## Setup
 
-Run once from the project folder. This creates an isolated Python environment (a *venv*) so the
+Get the code:
+
+```bash
+git clone https://github.com/Tech-Reformers/bedrock-flows.git
+cd bedrock-flows
+```
+
+Then run the following once from the project folder. It creates an isolated Python environment (a *venv*) so the
 demo dependencies do not affect the rest of your system.
 
 ### macOS / Linux
